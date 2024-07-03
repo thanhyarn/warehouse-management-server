@@ -28,4 +28,7 @@ router.get("/get-epc-by-barcode/:barcode", db.getEpcByBarcode);
 router.get("/get-epc-by-warehouse/:warehouse", db.getEpcByWarehouse);
 router.get("/search-epc", db.searchEpc);
 
+router.post("/read-epc", db.readEpc)
+router.get("/fetch-all-record", db.getAllRecord)
+
 module.exports = router;
