@@ -252,7 +252,7 @@ class Database {
     console.log("Attempting to add a new EPC");
 
     // Nhận dữ liệu từ request body
-    const { epc, barcode, warehouse } = req.body;
+    const { epc, barcode, warehouse, timestamp } = req.body;
 
     // Kiểm tra liệu các trường cần thiết có trống không
     if (!epc || !barcode || !warehouse) {
@@ -278,6 +278,8 @@ class Database {
       const result = await sql.query(
         `INSERT INTO TableEPC (epc, barcode, warehouse) VALUES ('${epc}', '${barcode}', '${warehouse}')`
       );
+
+      await sql.query`INSERT INTO TableRecord (epc, timestamp, warehouse) VALUES (${epc}, ${timestamp}, ${warehouse})`;
 
       // Đóng kết nối cơ sở dữ liệu
       sql.close();
@@ -625,7 +627,7 @@ class Database {
     }
   }
 
-  async getAllRecord(req, res){
+  async getAllRecord(req, res) {
     try {
       // Kết nối với cơ sở dữ liệu
       await sql.connect(dbConfig);
