@@ -5,6 +5,66 @@ const { publishEvent } = require("../../config/mqttConfig");
 const { broadcastData } = require("../../config/wsConfig");
 
 class Database {
+  async fetchData(req, res) {
+    function processData(data) {
+      const grouped = data.reduce((acc, item) => {
+        if (!acc[item.information]) {
+          acc[item.information] = {
+            name: item.information,
+            classify: item.classification_name,
+            data: [],
+          };
+        }
+        acc[item.information].data.push({
+          epc: item.epc,
+          timestamp: item.timestamp,
+        });
+        return acc;
+      }, {});
+
+      return Object.values(grouped).map((group) => ({
+        ...group,
+        amount: group.data.length,
+      }));
+    }
+
+    try {
+      // Kết nối với cơ sở dữ liệu
+      await sql.connect(dbConfig);
+      let result = await sql.query`SELECT
+          E.epc,
+          B.information,
+          E.timestamp,
+          C.name AS classification_name,
+          E.warehouse
+      FROM
+          TableEPC E
+      JOIN
+          TableBarcode B ON E.barcode = B.barcode
+      JOIN
+          Classification C ON B.classification_id = C.id;
+      `;
+
+      // const arrayData = processData(result.recordset);
+      const arrayData = result.recordset;
+
+      // Insert the record into TableRecord
+      // await sql.query`INSERT INTO TableRecord (epc, timestamp, warehouse) VALUES (${epc}, ${timestamp}, ${newWarehouse})`;
+
+      // Đóng kết nối cơ sở dữ liệu
+      sql.close();
+
+      // broadcastData(arrayData);
+
+      res.status(200).json({
+        arrayData,
+      });
+    } catch (err) {
+      console.error("SQL error", err);
+      res.status(500).json({ message: "Failed to search EPC records" });
+    }
+  }
+
   async getBarcodeById(req, res) {
     const barcodeId = req.params.barcode; // Lấy barcode ID từ request params
     console.log(`Fetching barcode with ID ${barcodeId}`);
@@ -47,7 +107,6 @@ class Database {
       // Gửi phản hồi HTTP
       const finalData = result.recordset;
 
-      broadcastData(finalData);
       res
         .status(200)
         .json({ message: "Data fetched successfully", data: result.recordset });
@@ -126,7 +185,6 @@ class Database {
 
       console.log("selectAllData", selectAllData.recordset);
       const finalData = selectAllData.recordset;
-      broadcastData(finalData);
 
       // Đóng kết nối cơ sở dữ liệu
       sql.close();
@@ -185,7 +243,6 @@ class Database {
       const selectAllData = await sql.query("SELECT * FROM TableBarcode");
       console.log("selectAllData", selectAllData.recordset);
       const finalData = selectAllData.recordset;
-      broadcastData(finalData);
 
       // Đóng kết nối cơ sở dữ liệu
       sql.close();
@@ -232,7 +289,6 @@ class Database {
       const selectAllData = await sql.query("SELECT * FROM TableBarcode");
       console.log("selectAllData after deletion", selectAllData.recordset);
       const finalData = selectAllData.recordset;
-      broadcastData(finalData);
 
       // Đóng kết nối cơ sở dữ liệu
       sql.close();
@@ -588,7 +644,30 @@ class Database {
   }
 
   async readEpc(req, res) {
-    const { epc, timestamp } = req.body;
+    function processData(data) {
+      const grouped = data.reduce((acc, item) => {
+        if (!acc[item.information]) {
+          acc[item.information] = {
+            name: item.information,
+            classify: item.classification_name,
+            data: [],
+          };
+        }
+        acc[item.information].data.push({
+          epc: item.epc,
+          timestamp: item.timestamp,
+        });
+        return acc;
+      }, {});
+
+      return Object.values(grouped).map((group) => ({
+        ...group,
+        amount: group.data.length,
+      }));
+    }
+    const { epc, timestamp, warehouse } = req.body;
+
+    console.log("Data nhận được: ", req.body);
 
     try {
       // Kết nối với cơ sở dữ liệu
@@ -596,25 +675,48 @@ class Database {
 
       // Chuẩn bị câu truy vấn SQL
       // Fetch the current warehouse state
-      const result =
+      let result =
         await sql.query`SELECT warehouse FROM TableEPC WHERE epc = ${epc}`;
       if (result.recordset.length === 0) {
         return res.status(404).send("EPC not found");
       }
 
-      // Toggle the warehouse state
-      const currentWarehouse = result.recordset[0].warehouse;
-
-      const newWarehouse = currentWarehouse === "1" ? "0" : "1";
+      result = await sql.query`SELECT barcode FROM TableEPC WHERE epc = ${epc}`;
 
       // Update the warehouse in TableEPC
-      await sql.query`UPDATE TableEPC SET warehouse = ${newWarehouse} WHERE epc = ${epc}`;
+      await sql.query`UPDATE TableEPC SET warehouse = ${warehouse}, timestamp = ${timestamp} WHERE epc = ${epc};`;
 
-      // Insert the record into TableRecord
-      await sql.query`INSERT INTO TableRecord (epc, timestamp, warehouse) VALUES (${epc}, ${timestamp}, ${newWarehouse})`;
+      result = await sql.query`SELECT
+          E.epc,
+          B.information,
+          E.timestamp,
+          C.name AS classification_name,
+          E.warehouse
+      FROM
+          TableEPC E
+      JOIN
+          TableBarcode B ON E.barcode = B.barcode
+      JOIN
+          Classification C ON B.classification_id = C.id;
+      `;
+
+      // const arrayData = processData(result.recordset);
+
+      // const finalResult = { barcord, action, data: arrayData };
+
+      // console.log(finalResult);
+
+      broadcastData(result.recordset);
+
+      await sql.query`INSERT INTO TableRecord (epc, timestamp, warehouse) VALUES (${epc}, ${timestamp}, ${warehouse})`;
+
+      // // Insert the record into TableRecord
+      // await sql.query`INSERT INTO TableRecord (epc, timestamp, warehouse) VALUES (${epc}, ${timestamp}, ${newWarehouse})`;
 
       // Đóng kết nối cơ sở dữ liệu
       sql.close();
+
+      // broadcastData(finalResult);
 
       res.status(200).json({
         message:
@@ -624,6 +726,37 @@ class Database {
     } catch (err) {
       console.error("SQL error", err);
       res.status(500).json({ message: "Failed to search EPC records" });
+    }
+  }
+
+  async getRecord(req, res) {
+    try {
+      const epc = req.params.epc;
+
+      console.log("Epc la : ", epc);
+      // Kết nối với cơ sở dữ liệu
+      await sql.connect(dbConfig);
+
+      // Truy vấn tất cả thông tin EPC từ cơ sở dữ liệu
+      const result = await sql.query(
+        `SELECT * FROM TableRecord where epc='${epc}'`
+      );
+
+      console.log(result.recordset);
+
+      // Kiểm tra xem có kết quả trả về hay không
+      if (result.recordset.length === 0) {
+        return res.status(404).json({ message: "No Record records found" });
+      }
+
+      // Đóng kết nối cơ sở dữ liệu
+      sql.close();
+
+      // Gửi thông tin EPC về cho client
+      res.json(result.recordset);
+    } catch (err) {
+      console.error("SQL error", err);
+      res.status(500).json({ message: "Failed to retrieve Record records" });
     }
   }
 
@@ -651,6 +784,56 @@ class Database {
     } catch (err) {
       console.error("SQL error", err);
       res.status(500).json({ message: "Failed to retrieve Record records" });
+    }
+  }
+
+  async setWarehouse(req, res) {
+    try {
+      await sql.connect(dbConfig);
+
+      const warehouse = req.params.warehouse;
+      await sql.query`UPDATE TableEPC SET warehouse = ${warehouse}`;
+
+      let result = await sql.query`SELECT
+          E.epc,
+          B.information,
+          E.timestamp,
+          C.name AS classification_name,
+          E.warehouse
+      FROM
+          TableEPC E
+      JOIN
+          TableBarcode B ON E.barcode = B.barcode
+      JOIN
+          Classification C ON B.classification_id = C.id;
+      `;
+
+      // const arrayData = processData(result.recordset);
+
+      // const finalResult = { barcord, action, data: arrayData };
+
+      // console.log(finalResult);
+
+      broadcastData(result.recordset);
+
+      // await sql.query`INSERT INTO TableRecord (epc, timestamp, warehouse) VALUES (${epc}, ${timestamp}, ${warehouse})`;
+
+      // // Insert the record into TableRecord
+      // await sql.query`INSERT INTO TableRecord (epc, timestamp, warehouse) VALUES (${epc}, ${timestamp}, ${newWarehouse})`;
+
+      // Đóng kết nối cơ sở dữ liệu
+      sql.close();
+
+      // broadcastData(finalResult);
+
+      res.status(200).json({
+        message:
+          "EPC records retrieved successfully for the specified warehouse",
+        // Trả về thông tin chi tiết của các EPC liên kết với kho
+      });
+    } catch (err) {
+      console.error("SQL error", err);
+      res.status(500).json({ message: "Failed to search EPC records" });
     }
   }
 }

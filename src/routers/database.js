@@ -19,6 +19,7 @@ router.delete("/delete-barcode/:barcode", db.deleteBarcode);
 
 // EPC
 
+router.get("/fetch-data", db.fetchData);
 router.post("/add-epc", db.addEpc);
 router.patch("/update-epc/:epc", db.updateEpc);
 router.delete("/delete-epc/:epc", db.deleteEpc);
@@ -28,7 +29,9 @@ router.get("/get-epc-by-barcode/:barcode", db.getEpcByBarcode);
 router.get("/get-epc-by-warehouse/:warehouse", db.getEpcByWarehouse);
 router.get("/search-epc", db.searchEpc);
 
-router.post("/read-epc", db.readEpc)
-router.get("/fetch-all-record", db.getAllRecord)
+router.post("/read-epc", db.readEpc);
+router.get("/fetch-all-record", db.getAllRecord);
+router.get("/get-record/:epc", db.getRecord);
+router.get("/set-warehouse/:warehouse", db.setWarehouse);
 
 module.exports = router;
