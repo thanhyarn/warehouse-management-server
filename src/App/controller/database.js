@@ -644,27 +644,6 @@ class Database {
   }
 
   async readEpc(req, res) {
-    function processData(data) {
-      const grouped = data.reduce((acc, item) => {
-        if (!acc[item.information]) {
-          acc[item.information] = {
-            name: item.information,
-            classify: item.classification_name,
-            data: [],
-          };
-        }
-        acc[item.information].data.push({
-          epc: item.epc,
-          timestamp: item.timestamp,
-        });
-        return acc;
-      }, {});
-
-      return Object.values(grouped).map((group) => ({
-        ...group,
-        amount: group.data.length,
-      }));
-    }
     const { epc, timestamp, warehouse } = req.body;
 
     console.log("Data nhận được: ", req.body);
@@ -682,6 +661,9 @@ class Database {
       }
 
       result = await sql.query`SELECT barcode FROM TableEPC WHERE epc = ${epc}`;
+      const barcord = result.recordset;
+
+      console.log("Barcord: ", barcord);
 
       // Update the warehouse in TableEPC
       await sql.query`UPDATE TableEPC SET warehouse = ${warehouse}, timestamp = ${timestamp} WHERE epc = ${epc};`;
@@ -706,7 +688,13 @@ class Database {
 
       // console.log(finalResult);
 
-      broadcastData(result.recordset);
+      const finalResult = {
+        epc: epc,
+        warehouse: warehouse,
+        data: result.recordset,
+      };
+
+      broadcastData(finalResult);
 
       await sql.query`INSERT INTO TableRecord (epc, timestamp, warehouse) VALUES (${epc}, ${timestamp}, ${warehouse})`;
 
@@ -741,8 +729,6 @@ class Database {
       const result = await sql.query(
         `SELECT * FROM TableRecord where epc='${epc}'`
       );
-
-      console.log(result.recordset);
 
       // Kiểm tra xem có kết quả trả về hay không
       if (result.recordset.length === 0) {
